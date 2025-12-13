@@ -36,63 +36,77 @@ class KNN:
         self.y_train = np.array(y)
         return self
     
-    def _calculate_distance(self, x1, x2):
+    def _calculate_distances_vectorized(self, X_test):
         """
-        Calculate distance between two points
+        Calculate distances between test points and all training points using memory-efficient vectorization
         
         Parameters:
         -----------
-        x1 : array-like
-            First point
-        x2 : array-like
-            Second point
+        X_test : array-like, shape (n_test_samples, n_features)
+            Test data points
             
         Returns:
         --------
-        float
-            Distance between x1 and x2
+        distances : array, shape (n_test_samples, n_train_samples)
+            Distance matrix
         """
         if self.metric == 'euclidean':
-            return np.sqrt(np.sum((x1 - x2) ** 2))
+            # Memory-efficient euclidean distance using matrix operations
+            # (a - b)^2 = a^2 - 2ab + b^2
+            # This avoids creating huge intermediate arrays
+            test_sq = np.sum(X_test ** 2, axis=1, keepdims=True)  # (n_test, 1)
+            train_sq = np.sum(self.X_train ** 2, axis=1, keepdims=True).T  # (1, n_train)
+            cross_term = np.dot(X_test, self.X_train.T)  # (n_test, n_train)
+            distances = np.sqrt(np.maximum(test_sq - 2 * cross_term + train_sq, 0))
         elif self.metric == 'manhattan':
-            return np.sum(np.abs(x1 - x2))
+            # For manhattan, we need to process in smaller chunks to save memory
+            n_test = X_test.shape[0]
+            n_train = self.X_train.shape[0]
+            distances = np.zeros((n_test, n_train))
+            
+            # Process in very small chunks to avoid memory issues
+            chunk_size = 100
+            for i in range(0, n_test, chunk_size):
+                end_i = min(i + chunk_size, n_test)
+                for j in range(0, n_train, 5000):  # Process 5000 training samples at a time
+                    end_j = min(j + 5000, n_train)
+                    diff = X_test[i:end_i, np.newaxis, :] - self.X_train[np.newaxis, j:end_j, :]
+                    distances[i:end_i, j:end_j] = np.sum(np.abs(diff), axis=2)
         else:
             raise ValueError(f"Unknown metric: {self.metric}")
+        
+        return distances
     
-    def _get_neighbors(self, x):
+    def _get_neighbors_batch(self, distances):
         """
-        Get k nearest neighbors for a single point
+        Get k nearest neighbors for batch of points
         
         Parameters:
         -----------
-        x : array-like
-            Query point
+        distances : array, shape (n_test_samples, n_train_samples)
+            Distance matrix
             
         Returns:
         --------
-        array-like
-            Labels of k nearest neighbors
+        neighbors : array, shape (n_test_samples, k)
+            Indices of k nearest neighbors for each test point
         """
-        # Calculate distances to all training points
-        distances = []
-        for i, x_train in enumerate(self.X_train):
-            dist = self._calculate_distance(x, x_train)
-            distances.append((dist, self.y_train[i]))
+        # Get indices of k smallest distances for each test sample
+        # Using argpartition for better performance than full sort
+        k_indices = np.argpartition(distances, self.k-1, axis=1)[:, :self.k]
         
-        # Sort by distance and get k nearest
-        distances.sort(key=lambda x: x[0])
-        k_nearest = [label for _, label in distances[:self.k]]
-        
-        return k_nearest
+        return k_indices
     
-    def predict(self, X):
+    def predict(self, X, batch_size=100):
         """
-        Predict class labels for samples in X
+        Predict class labels for samples in X using batch processing
         
         Parameters:
         -----------
         X : array-like, shape (n_samples, n_features)
             Test data
+        batch_size : int, default=100
+            Number of samples to process at once (to avoid memory issues)
             
         Returns:
         --------
@@ -100,38 +114,67 @@ class KNN:
             Predicted class labels
         """
         X = np.array(X)
+        n_samples = X.shape[0]
         predictions = []
         
-        for x in X:
-            neighbors = self._get_neighbors(x)
-            # Majority voting
-            most_common = Counter(neighbors).most_common(1)[0][0]
-            predictions.append(most_common)
+        # Process in batches to avoid memory overflow
+        for i in range(0, n_samples, batch_size):
+            batch_end = min(i + batch_size, n_samples)
+            X_batch = X[i:batch_end]
+            
+            # Calculate distances for this batch
+            distances = self._calculate_distances_vectorized(X_batch)
+            
+            # Get k nearest neighbor indices
+            k_indices = self._get_neighbors_batch(distances)
+            
+            # Get labels of k nearest neighbors
+            k_nearest_labels = self.y_train[k_indices]
+            
+            # Majority voting for each test sample
+            for labels in k_nearest_labels:
+                most_common = Counter(labels).most_common(1)[0][0]
+                predictions.append(most_common)
         
         return np.array(predictions)
     
-    def predict_proba(self, X):
+    def predict_proba(self, X, batch_size=100):
         """
-        Predict class probabilities for samples in X
+        Predict class probabilities for samples in X using batch processing
         
         Parameters:
         -----------
         X : array-like, shape (n_samples, n_features)
             Test data
+        batch_size : int, default=100
+            Number of samples to process at once (to avoid memory issues)
             
         Returns:
         --------
-        array-like, shape (n_samples, 2)
-            Predicted class probabilities [prob_class_0, prob_class_1]
+        array-like, shape (n_samples,)
+            Predicted probability for positive class
         """
         X = np.array(X)
+        n_samples = X.shape[0]
         probabilities = []
         
-        for x in X:
-            neighbors = self._get_neighbors(x)
+        # Process in batches to avoid memory overflow
+        for i in range(0, n_samples, batch_size):
+            batch_end = min(i + batch_size, n_samples)
+            X_batch = X[i:batch_end]
+            
+            # Calculate distances for this batch
+            distances = self._calculate_distances_vectorized(X_batch)
+            
+            # Get k nearest neighbor indices
+            k_indices = self._get_neighbors_batch(distances)
+            
+            # Get labels of k nearest neighbors
+            k_nearest_labels = self.y_train[k_indices]
+            
             # Calculate probability as proportion of positive class
-            prob_positive = sum(neighbors) / len(neighbors)
-            probabilities.append([1 - prob_positive, prob_positive])
+            prob_positive = np.mean(k_nearest_labels, axis=1)
+            probabilities.extend(prob_positive)
         
         return np.array(probabilities)
     
