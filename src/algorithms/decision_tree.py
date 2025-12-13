@@ -2,7 +2,7 @@ import numpy as np
 
 class Node:
     # COnstructor node
-    def __init__(self, feature_index=None, threshold=None, left=None, right=None, info_gain=None, value=None): 
+    def __init__(self, feature_index=None, threshold=None, left=None, right=None, info_gain=None, value=None, proba=None): 
         # Atribut Decision Node
         self.feature_index = feature_index # Index fitur yang dipakai split
         self.threshold = threshold # Threshold split fitur
@@ -12,6 +12,7 @@ class Node:
         
         # Atribut Leaf Node
         self.value = value # Hasi prediksi
+        self.proba = proba # Hasil prediksi dalam probabilitas
 
 class DecisionTreeClassifier:
     def __init__(self, min_samples_split=2, max_depth=2):
@@ -36,8 +37,8 @@ class DecisionTreeClassifier:
             num_labels == 1 or 
             num_samples < self.min_samples_split):
             
-            leaf_value = self._calculate_leaf_value(y)
-            return Node(value=leaf_value) # Kembalikan leaf node
+            leaf_value, leaf_proba = self._calculate_leaf_value(y)
+            return Node(value=leaf_value, proba=leaf_proba) # Kembalikan leaf node
 
         # Find best split
         best_split = self._get_best_split(X, y, num_features)
@@ -60,8 +61,8 @@ class DecisionTreeClassifier:
                         info_gain=best_split["info_gain"])
 
         # Jika tidak bisa split lagi, return Leaf Node
-        leaf_value = self._calculate_leaf_value(y)
-        return Node(value=leaf_value)
+        leaf_value, leaf_proba = self._calculate_leaf_value(y)
+        return Node(value=leaf_value, proba=leaf_proba)
 
     # --- Helper Functions ---
     
@@ -124,9 +125,15 @@ class DecisionTreeClassifier:
         return left_idxs, right_idxs
 
     def _calculate_leaf_value(self, y):
-        # Menentukan nilai label
         Y = list(y)
-        return max(Y, key=Y.count)
+        # Kalau mau pake majority class
+        majority_label = max(Y, key=Y.count)
+        
+        # Kalau mau pake probabilitas
+        # Rumus: Jumlah Data Fraud / Total Data di Node ini
+        proba_fraud = np.count_nonzero(y == 1) / len(y)
+        
+        return majority_label, proba_fraud
     
     def _gini(self, y):
         # Menghitung gini impurity dari suatu node(0 = Murni, 0.5 = Kotor)
@@ -172,6 +179,22 @@ class DecisionTreeClassifier:
         else:
             # Belok kanan
             return self._make_prediction(x, tree_node.right)
+        
+    def predict_proba(self, X):
+        # Memprediksi skor dalam probabilitas (0.0 - 1.0)
+        X = np.array(X)
+        predictions = [self._make_proba_prediction(x, self.root) for x in X]
+        return np.array(predictions)
+
+    def _make_proba_prediction(self, x, tree_node):
+        if tree_node.value is not None:
+            return tree_node.proba
+        
+        feature_val = x[tree_node.feature_index]
+        if feature_val <= tree_node.threshold:
+            return self._make_proba_prediction(x, tree_node.left)
+        else:
+            return self._make_proba_prediction(x, tree_node.right)
     
     def print_tree(self, tree=None, indent=" "):
         # Visualisasi sederhana pohon
