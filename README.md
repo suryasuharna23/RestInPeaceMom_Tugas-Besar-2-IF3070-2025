@@ -20,8 +20,7 @@ Repository ini berisi implementasi berbagai algoritma pembelajaran mesin yaitu D
 ### 2. Instalasi Dependensi
 1.  Clone repository:
     ```bash
-    git clone [https://github.com/](https://github.com/)[USERNAME_GITHUB]/[NAMA_REPOSITORY].git
-    cd [NAMA_FOLDER_REPOSITORY]
+    git clone https://github.com/suryasuharna23/RestInPeaceMom_Tugas-Besar-2-IF3070-2025.git
     ```
 
 2.  Install dependensi yang diperlukan pada `requirements.txt`:
