@@ -49,7 +49,7 @@ Notebook ini berisi alur kerja lengkap mulai dari pemrosesan data, pelatihan mod
 ---
 
 Model dapat di-save dan di-load menggunakan fungsi save_model dan load_model.
-Model yang digunakan pada submisi kaggle dapat diperoleh dengan menjalankan algoritma DTL pada settingan hyperparameter bawaan.
+Model yang digunakan pada submisi kaggle dapat diperoleh dengan menjalankan algoritma DTL dan Logress pada settingan hyperparameter bawaan.
 
 ## Anggota Kelompok dan Pembagian Tugas
 | Nama Anggota | NIM | Pembagian Tugas |
